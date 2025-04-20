@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+aiogram
+httpx
+python-dotenv
+psycopg2-binary
+sqlalchemy
+asyncpg
+python-i18n
