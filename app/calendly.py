@@ -1,62 +1,61 @@
-import os
 import httpx
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
+from typing import List
 
-load_dotenv()
+# ✅ Fetch real-time availability from Calendly using OAuth token
+async def get_user_slots(access_token: str) -> List[str]:
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
 
-CALENDLY_API_KEY = os.getenv("CALENDLY_API_KEY")
-SCHEDULING_LINK = os.getenv("CALENDLY_SCHEDULING_LINK")
-
-headers = {
-    "Authorization": f"Bearer {CALENDLY_API_KEY}",
-    "Content-Type": "application/json",
-}
-
-async def get_available_slots():
-    if not CALENDLY_API_KEY or not SCHEDULING_LINK:
-        raise Exception("Calendly credentials are missing.")
-
+    # Step 1: Get user's event types (Calendly meetings)
     async with httpx.AsyncClient() as client:
-        # ✅ STEP 1: Get current user’s URI
-        user_res = await client.get("https://api.calendly.com/users/me", headers=headers)
-        user_res.raise_for_status()
-        user_uri = user_res.json()["resource"]["uri"]
-
-        # ✅ STEP 2: Get event types for that user
-        res = await client.get(
-            f"https://api.calendly.com/event_types?user={user_uri}",
+        event_type_res = await client.get(
+            "https://api.calendly.com/event_types",
             headers=headers
         )
-        res.raise_for_status()
-        event_types = res.json().get("collection", [])
 
-        event_uri = None
-        for event in event_types:
-            if event["scheduling_url"] == SCHEDULING_LINK:
-                event_uri = event["uri"]
-                break
+    if event_type_res.status_code != 200:
+        raise Exception(f"Failed to fetch event types: {event_type_res.text}")
 
-        if not event_uri:
-            raise Exception("Matching event type not found.")
+    event_types = event_type_res.json().get("collection", [])
+    if not event_types:
+        raise Exception("No event types found for this Calendly account.")
 
-        # ✅ STEP 3: Get availability for next 7 days
-        start_time = datetime.utcnow()
-        end_time = start_time + timedelta(days=7)
+    # Use the first event_type found (or implement custom selector)
+    event_uri = event_types[0]["uri"]
 
-        payload = {
-            "event_type": event_uri,
-            "start_time": start_time.isoformat() + "Z",
-            "end_time": end_time.isoformat() + "Z",
-            "timezone": "Asia/Tashkent"
-        }
+    # Step 2: Define availability window (next 7 days)
+    start = datetime.utcnow()
+    end = start + timedelta(days=7)
 
+    payload = {
+        "event_type": event_uri,
+        "start_time": start.isoformat() + "Z",
+        "end_time": end.isoformat() + "Z",
+        "timezone": "Asia/Tashkent"
+    }
+
+    # Step 3: Query Calendly availability
+    async with httpx.AsyncClient() as client:
         avail_res = await client.post(
             "https://api.calendly.com/availability",
             headers=headers,
             json=payload
         )
-        avail_res.raise_for_status()
-        slots = avail_res.json().get("collection", [])
 
-        return [slot["start_time"].replace("T", " ").replace("Z", "") for slot in slots[:5]]
+    if avail_res.status_code != 200:
+        raise Exception(f"Failed to fetch availability: {avail_res.text}")
+
+    slots = avail_res.json().get("collection", [])
+    if not slots:
+        return []
+
+    # Step 4: Format time strings nicely for Telegram display
+    return [
+        slot["start_time"]
+        .replace("T", " ")
+        .replace("Z", "")
+        for slot in slots[:5]
+    ]

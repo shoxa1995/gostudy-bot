@@ -10,20 +10,21 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.handlers import router as booking_router
-from app.calendly_oauth import router as oauth_router  # ✅ Calendly OAuth router
+from app.calendly_oauth import router as oauth_router
+from app.database import init_db  # ✅ DB init
 
-# Load environment variables
+# Load .env variables
 load_dotenv()
 
-# Setup logging
+# Logging setup
 logging.basicConfig(level=logging.INFO)
 
-# Get Telegram Bot Token
+# Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    raise RuntimeError("❗ BOT_TOKEN is missing in .env")
+    raise RuntimeError("❗ BOT_TOKEN is missing from .env")
 
-# Initialize aiogram bot (v3.7+ format)
+# Initialize aiogram bot (3.7+ syntax)
 bot = Bot(
     token=BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
@@ -33,19 +34,22 @@ bot = Bot(
 dp = Dispatcher(storage=MemoryStorage())
 dp.include_router(booking_router)
 
-# Initialize FastAPI app
+# Setup FastAPI
 app = FastAPI()
 
-# ✅ Register OAuth routes
+# Include Calendly OAuth router
 app.include_router(oauth_router)
 
-# Health check route for Render
+# Health check endpoint
 @app.get("/")
 async def root():
     return {"message": "GoStudy Booking Bot is running 🚀"}
 
-# On startup, launch aiogram polling
+# On startup: init DB and start polling bot
 @app.on_event("startup")
 async def on_startup():
-    logging.info("Starting Telegram bot polling...")
+    logging.info("📦 Initializing database...")
+    await init_db()
+
+    logging.info("🤖 Starting Telegram bot polling...")
     asyncio.create_task(dp.start_polling(bot))
